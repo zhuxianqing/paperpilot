@@ -1,0 +1,114 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: paperpilot-backend
+  profiles:
+    active: dev
+  web:
+    resources:
+      add-mappings: true
+  mvc:
+    throw-exception-if-no-handler-found: true
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/paperpilot?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:paperpilot}
+    password: ${DB_PASSWORD:paperpilot_pass}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+# JWT配置
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-here-min-32-chars!!}
+  access-token-expiration: 86400000
+  refresh-token-expiration: 604800000
+
+# AES加密密钥 (32字节)
+encryption:
+  key: ${ENCRYPTION_KEY:your-32-byte-encryption-key!}
+
+# AI配置
+ai:
+  provider: ${AI_PROVIDER:minimax}
+  api-key: ${AI_API_KEY:}
+  model: ${AI_MODEL:MiniMax-M2.7}
+  base-url: ${AI_BASE_URL:https://api.minimaxi.com/anthropic}
+
+# 免费额度配置
+free-quota:
+  daily-limit: 3
+
+# 邮件配置
+mail:
+  smtp:
+    host: ${MAIL_SMTP_HOST:smtp.qq.com}
+    port: ${MAIL_SMTP_PORT:587}
+  sender:
+    username: ${MAIL_USERNAME:}
+    auth-code: ${MAIL_AUTH_CODE:}
+
+# 验证码配置
+verification:
+  code:
+    length: 6
+    expiry-minutes: 10
+    resend-interval-seconds: 60
+
+# BYOK用户日调用上限
+byok:
+  daily-limit: 50
+
+# AI限流配置
+ai-rate-limit:
+  requests-per-minute: 5    # 每分钟最多5次请求
+  window-seconds: 60        # 限流窗口(秒)
+
+# 防刷配置
+anti-abuse:
+  ip-max-users-per-day: 50   # 同一IP每日最多用户数
+  max-duplicate-requests: 4  # 10次内最大重复请求数
+
+# 本地文件存储配置（替代MinIO）
+export:
+  storage-type: local              # local（本地存储）
+  local-path: ${EXPORT_PATH:./exports}  # 导出文件存储路径
+  expiry-days: 7                   # 文件过期天数
+  max-files-per-day: 1000          # 每日最大文件数
+
+# 飞书配置
+feishu:
+  app-id: ${FEISHU_APP_ID:}
+  app-secret: ${FEISHU_APP_SECRET:}
+
+# 支付宝配置
+alipay:
+  app-id: ${ALIPAY_APP_ID:}
+  private-key: ${ALIPAY_PRIVATE_KEY:}
+  alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+  gateway-url: ${ALIPAY_GATEWAY:https://openapi.alipaydev.com/gateway.do}
+  notify-url: ${APP_URL:http://localhost:8080}/api/v1/payment/alipay/notify
+  return-url: ${APP_URL:http://localhost:8080}/payment/success
+
+# 日志配置
+logging:
+  file:
+    path: ./logs
+    name: ./logs/paperpilot.log
+  level:
+    com.paperpilot: DEBUG
+    org.springframework.security: DEBUG
