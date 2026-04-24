@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.paperpilot.dto.AIConfigDTO;
 import com.paperpilot.dto.PaperDTO;
+import com.paperpilot.dto.response.PaperAnalysisTranslateVO;
 import com.paperpilot.dto.response.PaperAnalysisVO;
 import com.paperpilot.entity.UserAIConfig;
 import com.paperpilot.exception.BusinessException;
@@ -55,39 +56,6 @@ public class AIServiceImpl implements AIService {
     private static final int RATE_LIMIT_PER_MINUTE = 5;  // 每分钟最多5次
     private static final int RATE_LIMIT_WINDOW = 60;     // 60秒窗口
 
-    @Override
-    public List<PaperAnalysisVO> analyzeBatch(Long userId, List<PaperDTO> papers, boolean useUserConfig, AIConfigDTO userConfig) {
-        // 限流检查
-        if (!cacheService.checkRateLimit(userId, RATE_LIMIT_PER_MINUTE, RATE_LIMIT_WINDOW)) {
-            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-        }
-
-        // 如果使用用户配置，获取并解密
-        AIConfigDTO config;
-        if (useUserConfig) {
-            if (userConfig != null && userConfig.getApiKey() != null && !userConfig.getApiKey().isEmpty()) {
-                // 使用前端传来的用户配置（BYOK模式）
-                config = userConfig;
-            } else {
-                // 从数据库获取用户配置
-                config = getUserAIConfig(userId);
-            }
-            // 检查BYOK日调用上限
-            if (!quotaService.checkByokDailyLimit(userId)) {
-                throw new BusinessException(ErrorCode.BYOK_DAILY_LIMIT_EXCEEDED);
-            }
-        } else {
-            config = AIConfigDTO.builder()
-                    .provider(systemProvider)
-                    .apiKey(systemApiKey)
-                    .baseUrl(systemBaseUrl)
-                    .model(systemModel)
-                    .build();
-        }
-
-        // 批量处理，带缓存和去重
-        return analyzeBatchWithCache(userId, config, papers);
-    }
 
     /**
      * 批量分析，支持缓存和去重
@@ -227,6 +195,38 @@ public class AIServiceImpl implements AIService {
         }
     }
 
+    @Override
+    public PaperAnalysisTranslateVO analyzeSingleWithTranslations(Long userId, PaperDTO paper, boolean useUserConfig, String provider, String model) {
+        if (!cacheService.checkRateLimit(userId, RATE_LIMIT_PER_MINUTE, RATE_LIMIT_WINDOW)) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+        }
+
+        AIConfigDTO config;
+        if (useUserConfig) {
+            config = getUserAIConfig(userId);
+            if (provider != null && !provider.isBlank()) {
+                config.setProvider(provider);
+            }
+            if (model != null && !model.isBlank()) {
+                config.setModel(model);
+            }
+            if (!quotaService.checkByokDailyLimit(userId)) {
+                throw new BusinessException(ErrorCode.BYOK_DAILY_LIMIT_EXCEEDED);
+            }
+        } else {
+            config = AIConfigDTO.builder()
+                    .provider(systemProvider)
+                    .apiKey(systemApiKey)
+                    .baseUrl(systemBaseUrl)
+                    .model(systemModel)
+                    .build();
+        }
+
+        String prompt = buildAnalysisPromptWithTranslations(paper);
+        String response = callAIAPI(config, prompt);
+        return parseAnalysisTranslateResponse(paper, response);
+    }
+
     private PaperAnalysisVO analyzeSingle(AIConfigDTO config, PaperDTO paper) {
         String prompt = buildAnalysisPrompt(paper);
         String response = callAIAPI(config, prompt);
@@ -357,6 +357,35 @@ public class AIServiceImpl implements AIService {
         );
     }
 
+    private String buildAnalysisPromptWithTranslations(PaperDTO paper) {
+        return String.format("""
+                请分析以下学术论文，并同时完成中文翻译。请严格以JSON格式返回，不要输出任何额外说明。
+
+                标题：%s
+                作者：%s
+                摘要：%s
+                期刊：%s
+                年份：%d
+
+                请返回以下格式的JSON：
+                {
+                    "titleZh": "标题中文翻译",
+                    "abstractZh": "摘要中文翻译",
+                    "summaryZh": "AI中文总结",
+                    "methodologyZh": "研究方法中文总结",
+                    "conclusionZh": "研究结论中文总结",
+                    "researchFindingsZh": "研究成果中文总结",
+                    "keywordsZh": ["关键词1", "关键词2", "关键词3"]
+                }
+                """,
+                paper.getTitle(),
+                String.join(", ", paper.getAuthors()),
+                paper.getAbstracts(),
+                paper.getJournal(),
+                paper.getPublishYear() == null ? 0 : paper.getPublishYear()
+        );
+    }
+
     private PaperAnalysisVO parseAnalysisResponse(String doi, String title, String response) {
         if (response == null || response.isEmpty()) {
             log.error("AI response is null or empty for paper: {}", title);
@@ -413,6 +442,37 @@ public class AIServiceImpl implements AIService {
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.AI_CONFIG_DECRYPT_ERROR);
         }
+    }
+
+    private PaperAnalysisTranslateVO parseAnalysisTranslateResponse(PaperDTO paper, String response) {
+        if (response == null || response.isEmpty()) {
+            throw new BusinessException(ErrorCode.AI_ANALYSIS_FAILED, "AI返回空响应");
+        }
+        try {
+            String jsonStr = extractJson(response);
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode node = mapper.readTree(jsonStr);
+            return PaperAnalysisTranslateVO.builder()
+                    .doi(paper.getDoi())
+                    .title(paper.getTitle())
+                    .titleCn(node.path("titleZh").asText())
+                    .abstractText(paper.getAbstracts())
+                    .abstractCn(node.path("abstractZh").asText())
+                    .summaryZh(node.path("summaryZh").asText())
+                    .methodologyZh(node.path("methodologyZh").asText())
+                    .conclusionZh(node.path("conclusionZh").asText())
+                    .researchFindingsZh(node.path("researchFindingsZh").asText())
+                    .aiKeywords(convertToList(node.path("keywordsZh")))
+                    .build();
+        } catch (Exception e) {
+            log.error("Failed to parse translated AI response", e);
+            throw new BusinessException(ErrorCode.AI_ANALYSIS_FAILED, "AI分析结果解析失败");
+        }
+    }
+
+    @Override
+    public String sha256Hash(String input) {
+        return cacheService.sha256Hash(input);
     }
 
     private String extractJson(String text) {

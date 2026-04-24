@@ -7,9 +7,13 @@ import { computed, ref } from 'vue';
 import type { Paper } from '@shared/types/paper';
 import type { QuotaInfo, User } from '@shared/types/user';
 import type { SearchTask } from '@shared/types/task';
+import {
+  getSelectedPaperDOIs,
+  setSelectedPaperDOIs,
+  clearSelectedPaperDOIs
+} from '@shared/utils/storage';
 
 export const useAppStore = defineStore('app', () => {
-  // ===== State =====
   const user = ref<User | null>(null);
   const papers = ref<Paper[]>([]);
   const currentTask = ref<SearchTask | null>(null);
@@ -21,7 +25,6 @@ export const useAppStore = defineStore('app', () => {
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
-  // ===== Getters =====
   const selectedPapers = computed(() => papers.value.filter(p => p.selected));
   const selectedCount = computed(() => selectedPapers.value.length);
   const hasPapers = computed(() => papers.value.length > 0);
@@ -31,91 +34,101 @@ export const useAppStore = defineStore('app', () => {
   );
   const isLoggedIn = computed(() => !!user.value);
 
-  // ===== Actions =====
+  function buildPaperKey(paper: Paper): string {
+    if (paper.paperKey) return paper.paperKey;
+    if (paper.doi?.trim()) return paper.doi.trim().toLowerCase();
+    const firstAuthor = paper.authors?.[0] || '';
+    return `${paper.title.trim().toLowerCase()}|${firstAuthor}|${paper.publishYear || ''}`;
+  }
 
-  /**
-   * 设置错误信息
-   */
   function setError(message: string | null) {
     error.value = message;
   }
 
-  /**
-   * 设置加载状态
-   */
   function setLoading(loading: boolean) {
     isLoading.value = loading;
   }
 
-  /**
-   * 设置用户信息
-   */
   function setUser(userData: User | null) {
     user.value = userData;
   }
 
-  /**
-   * 设置额度信息
-   */
   function setQuota(quotaData: QuotaInfo) {
     quota.value = quotaData;
   }
 
-  /**
-   * 设置文献列表
-   */
   function setPapers(papersData: Paper[]) {
     papers.value = papersData.map((p, idx) => ({
       ...p,
       id: p.id || idx + 1,
+      paperKey: buildPaperKey(p),
+      isAnalyzed: p.isAnalyzed ?? false,
+      reuseDecision: p.reuseDecision ?? (p.isAnalyzed ? 'reuse' : 'reanalyze'),
+      forceReanalyze: p.forceReanalyze ?? false,
       selected: p.selected ?? true
     }));
   }
 
-  /**
-   * 更新文献列表
-   */
   function updatePapers(updatedPapers: Paper[]) {
     papers.value = updatedPapers;
   }
 
-  /**
-   * 全选文献
-   */
-  function selectAll() {
+  async function applyBatchReuseDecision(decision: 'reuse' | 'reanalyze', onlySelected = true) {
+    papers.value = papers.value.map((paper) => {
+      if (!paper.isAnalyzed) return paper;
+      if (onlySelected && !paper.selected) return paper;
+      return {
+        ...paper,
+        reuseDecision: decision,
+        forceReanalyze: decision === 'reanalyze'
+      };
+    });
+    await persistSelection();
+  }
+
+  function setPaperReuseDecision(paperKey: string, decision: 'reuse' | 'reanalyze') {
+    papers.value = papers.value.map((paper) =>
+      paper.paperKey === paperKey
+        ? {
+            ...paper,
+            reuseDecision: decision,
+            forceReanalyze: decision === 'reanalyze'
+          }
+        : paper
+    );
+  }
+
+  async function selectAll() {
     papers.value = papers.value.map(p => ({ ...p, selected: true }));
+    await persistSelection();
   }
 
-  /**
-   * 取消全选
-   */
-  function selectNone() {
+  async function selectNone() {
     papers.value = papers.value.map(p => ({ ...p, selected: false }));
+    await persistSelection();
   }
 
-  /**
-   * 仅选择Q1文献
-   */
-  function selectQ1Only() {
+  async function selectQ1Only() {
     papers.value = papers.value.map(p => ({
       ...p,
       selected: p.quartile === 'Q1'
     }));
+    await persistSelection();
   }
 
-  /**
-   * 切换文献选中状态
-   */
-  function togglePaperSelection(doi: string | undefined) {
-    const paper = papers.value.find(p => p.doi === doi);
+  async function persistSelection() {
+    const dois = papers.value.filter(p => p.selected).map(p => p.doi).filter(Boolean) as string[];
+    await setSelectedPaperDOIs(dois);
+  }
+
+  async function togglePaperSelection(paperKeyOrDoi: string | undefined) {
+    const paper = papers.value.find(p => p.paperKey === paperKeyOrDoi || p.doi === paperKeyOrDoi);
     if (paper) {
       paper.selected = !paper.selected;
+      await persistSelection();
     }
   }
 
-  /**
-   * 从存储加载文献
-   */
   async function loadPapersFromStorage() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'LOAD_PAPERS' });
@@ -127,48 +140,41 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  /**
-   * 保存文献到存储
-   */
-  async function savePapersToStorage() {
+  async function lookupAnalysisStatus() {
+    if (papers.value.length === 0) return;
     try {
-      await chrome.runtime.sendMessage({
-        type: 'SAVE_PAPERS',
-        payload: { papers: papers.value }
+      const response = await chrome.runtime.sendMessage({
+        type: 'LOOKUP_ANALYSIS_STATUS',
+        payload: {
+          papers: papers.value
+        }
+      });
+      if (!response.success || !response.data) return;
+      const lookupMap = new Map(
+        (response.data as Array<{ paperKey: string; analyzed: boolean; analyzedAt?: string; status?: Paper['analysisStatus'] }>).map(item => [item.paperKey, item])
+      );
+      papers.value = papers.value.map((paper) => {
+        const key = buildPaperKey(paper);
+        const lookup = lookupMap.get(key);
+        const isAnalyzed = !!lookup?.analyzed;
+        return {
+          ...paper,
+          paperKey: key,
+          isAnalyzed,
+          analysisStatus: lookup?.status,
+          analyzedAt: lookup?.analyzedAt,
+          reuseDecision: isAnalyzed ? (paper.reuseDecision || 'reuse') : 'reanalyze',
+          forceReanalyze: isAnalyzed ? paper.forceReanalyze ?? false : false
+        };
       });
     } catch (err) {
-      console.error('Failed to save papers:', err);
+      console.error('Failed to lookup analysis status:', err);
     }
   }
 
-  /**
-   * 更新分析后的文献
-   */
-  function updateAnalyzedPapers(analyzedPapers: Paper[]) {
-    const paperMap = new Map(analyzedPapers.map(p => [p.doi || p.title, p]));
-
-    papers.value = papers.value.map(p => {
-      const key = p.doi || p.title;
-      const analyzed = paperMap.get(key);
-      if (analyzed) {
-        return {
-          ...p,
-          aiSummary: analyzed.aiSummary,
-          aiKeywords: analyzed.aiKeywords,
-          methodology: analyzed.methodology,
-          conclusion: analyzed.conclusion,
-          researchFindings: analyzed.researchFindings
-        };
-      }
-      return p;
-    });
-  }
-
-  /**
-   * 清除文献
-   */
   async function clearPapers() {
     papers.value = [];
+    await clearSelectedPaperDOIs();
     try {
       await chrome.runtime.sendMessage({ type: 'CLEAR_PAPERS' });
     } catch (err) {
@@ -176,9 +182,6 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  /**
-   * 刷新额度
-   */
   async function refreshQuota() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_QUOTA' });
@@ -190,9 +193,6 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  /**
-   * 刷新用户信息
-   */
   async function refreshUser() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_PROFILE' });
@@ -204,21 +204,28 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function restoreSelectionFromStorage() {
+    const dois = await getSelectedPaperDOIs();
+    if (dois.length > 0) {
+      papers.value = papers.value.map(p => ({
+        ...p,
+        selected: dois.includes(p.doi || '')
+      }));
+    }
+  }
+
   return {
-    // State
     user,
     papers,
     currentTask,
     quota,
     isLoading,
     error,
-    // Getters
     selectedPapers,
     selectedCount,
     hasPapers,
     hasQuota,
     isLoggedIn,
-    // Actions
     setError,
     setLoading,
     setUser,
@@ -229,11 +236,13 @@ export const useAppStore = defineStore('app', () => {
     selectNone,
     selectQ1Only,
     togglePaperSelection,
+    setPaperReuseDecision,
+    applyBatchReuseDecision,
     loadPapersFromStorage,
-    savePapersToStorage,
-    updateAnalyzedPapers,
+    lookupAnalysisStatus,
     clearPapers,
     refreshQuota,
-    refreshUser
+    refreshUser,
+    restoreSelectionFromStorage
   };
 });

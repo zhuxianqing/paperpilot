@@ -13,7 +13,11 @@ export const STORAGE_KEYS = {
   USER: 'user',
   CACHED_PAPERS: 'cachedPapers',
   AI_CONFIGS: 'aiConfigs',
-  SETTINGS: 'settings'
+  SETTINGS: 'settings',
+  SELECTED_PAPER_DOIS: 'selectedPaperDOIs',
+  ANALYZED_PAPERS: 'analyzedPapers',
+  CURRENT_VIEW: 'currentView',
+  ANALYSIS_TASK: 'analysisTask'
 } as const;
 
 // 存储数据类型定义
@@ -24,6 +28,9 @@ interface StorageData {
   [STORAGE_KEYS.CACHED_PAPERS]: Paper[];
   [STORAGE_KEYS.AI_CONFIGS]: UserAIConfig[];
   [STORAGE_KEYS.SETTINGS]: Record<string, unknown>;
+  [STORAGE_KEYS.SELECTED_PAPER_DOIS]: string[];
+  [STORAGE_KEYS.ANALYZED_PAPERS]: Paper[];
+  [STORAGE_KEYS.CURRENT_VIEW]: 'login' | 'papers' | 'ai-config';
 }
 
 /**
@@ -190,4 +197,44 @@ export async function clearAuth(): Promise<void> {
     STORAGE_KEYS.REFRESH_TOKEN,
     STORAGE_KEYS.USER
   ]);
+}
+
+// ===== 论文选中状态持久化 =====
+
+export async function getSelectedPaperDOIs(): Promise<string[]> {
+  return (await getStorageItem(STORAGE_KEYS.SELECTED_PAPER_DOIS)) || [];
+}
+
+export async function setSelectedPaperDOIs(dois: string[]): Promise<void> {
+  return setStorageItem(STORAGE_KEYS.SELECTED_PAPER_DOIS, dois);
+}
+
+export async function clearSelectedPaperDOIs(): Promise<void> {
+  return removeStorageItem(STORAGE_KEYS.SELECTED_PAPER_DOIS);
+}
+
+// ===== AI分析结果持久化 =====
+
+export async function getAnalyzedPapers(): Promise<Paper[]> {
+  return (await getStorageItem(STORAGE_KEYS.ANALYZED_PAPERS)) || [];
+}
+
+export async function setAnalyzedPapers(papers: Paper[]): Promise<void> {
+  return setStorageItem(STORAGE_KEYS.ANALYZED_PAPERS, papers);
+}
+
+export async function clearAnalyzedPapers(): Promise<void> {
+  return removeStorageItem(STORAGE_KEYS.ANALYZED_PAPERS);
+}
+
+// ===== 视图状态持久化 =====
+
+export async function getCurrentView(): Promise<string | null> {
+  return getStorageItem(STORAGE_KEYS.CURRENT_VIEW);
+}
+
+export async function setCurrentView(
+  view: 'login' | 'papers' | 'ai-config'
+): Promise<void> {
+  return setStorageItem(STORAGE_KEYS.CURRENT_VIEW, view);
 }

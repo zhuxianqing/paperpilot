@@ -2,17 +2,16 @@
 import { onMounted, ref } from 'vue';
 import { useAppStore } from './stores/app';
 import { useMessage } from './useMessage';
-import { getAccessToken, getUser } from '@shared/utils/storage';
+import { getAccessToken, getUser, getCurrentView, setCurrentView } from '@shared/utils/storage';
 import LoginPanel from './components/LoginPanel.vue';
 import PaperSelector from './components/PaperSelector.vue';
 import AIConfigPanel from './components/AIConfigPanel.vue';
-import ExportPanel from './components/ExportPanel.vue';
 import UserHeader from './components/UserHeader.vue';
 
 const store = useAppStore();
 
 // 当前视图
-const currentView = ref<'login' | 'papers' | 'ai-config' | 'export'>('login');
+const currentView = ref<'login' | 'papers' | 'ai-config'>('login');
 const isInitializing = ref(true);
 const { message, showMessage } = useMessage();
 
@@ -25,7 +24,6 @@ async function initialize() {
   isInitializing.value = true;
 
   try {
-    // 检查登录状态
     const token = await getAccessToken();
     const user = await getUser();
 
@@ -33,15 +31,19 @@ async function initialize() {
       store.setUser(user);
       await store.refreshQuota();
 
-      // 仅在当前页面与论文来源页面匹配时加载缓存文献
       const shouldLoad = await shouldLoadPapers();
       if (shouldLoad) {
         await store.loadPapersFromStorage();
+        await store.lookupAnalysisStatus();
       } else {
         store.setPapers([]);
       }
 
-      currentView.value = 'papers';
+      await store.restoreSelectionFromStorage();
+
+      // popup 只保留选择与提交流程
+      const savedView = await getCurrentView();
+      currentView.value = savedView === 'ai-config' ? 'ai-config' : 'papers';
     } else {
       currentView.value = 'login';
     }
@@ -101,22 +103,15 @@ function goToAIConfig() {
     return;
   }
   currentView.value = 'ai-config';
-}
-
-// 前往导出
-function goToExport() {
-  currentView.value = 'export';
+  setCurrentView('ai-config');
 }
 
 // 返回文献选择
 function backToPapers() {
   currentView.value = 'papers';
+  setCurrentView('papers');
 }
 
-// 返回 AI 配置
-function backToAIConfig() {
-  currentView.value = 'ai-config';
-}
 
 // 打开设置页面
 function openSettings() {
@@ -191,13 +186,6 @@ function openSettings() {
           <AIConfigPanel
             v-else-if="currentView === 'ai-config'"
             @back="backToPapers"
-            @analyze-complete="goToExport"
-          />
-
-          <ExportPanel
-            v-else-if="currentView === 'export'"
-            @back="backToAIConfig"
-            @export-complete="backToPapers"
           />
         </div>
       </div>

@@ -19,13 +19,20 @@ import {
   handleGetProfile,
   handleGetQuota,
   handleGetTask,
+  handleGetAnalysisStatus,
+  handleGetAnalysisTask,
+  handleGetAnalysisTaskPapers,
+  handleListAnalysisHistory,
+  handleListAnalysisTasks,
   handleLoadPapers,
+  handleLookupAnalysisStatus,
   handleLogin,
   handleLogout,
   handleRegister,
   handleSaveAIConfig,
   handleSavePapers,
   handleSendCode,
+  handleSubmitAnalysisTask,
   handleTestAIConfig
 } from './message-router';
 
@@ -124,6 +131,33 @@ chrome.runtime.onMessage.addListener((
       }));
       return true;
 
+    case 'SUBMIT_ANALYSIS_TASK':
+      handleAsync(() => handleSubmitAnalysisTask(payload as {
+        papers: Paper[];
+        useUserConfig?: boolean;
+      }));
+      return true;
+
+    case 'GET_ANALYSIS_TASK':
+      handleAsync(() => handleGetAnalysisTask(payload as { taskNo: string }));
+      return true;
+
+    case 'GET_ANALYSIS_TASK_PAPERS':
+      handleAsync(() => handleGetAnalysisTaskPapers(payload as { taskNo: string }));
+      return true;
+
+    case 'LIST_ANALYSIS_TASKS':
+      handleAsync(() => handleListAnalysisTasks(payload as { page?: number; size?: number } | undefined));
+      return true;
+
+    case 'LIST_ANALYSIS_HISTORY':
+      handleAsync(() => handleListAnalysisHistory(payload as { page?: number; size?: number; sortBy?: string; order?: string; keyword?: string } | undefined));
+      return true;
+
+    case 'LOOKUP_ANALYSIS_STATUS':
+      handleAsync(() => handleLookupAnalysisStatus(payload as { papers: Paper[] }));
+      return true;
+
     // 导出
     case 'EXPORT_FEISHU':
       handleAsync(() => handleExportFeishu(payload as { papers: Paper[] }));
@@ -165,6 +199,10 @@ chrome.runtime.onMessage.addListener((
 
     case 'GET_CURRENT_TAB_HOST':
       handleAsync(() => handleGetCurrentTabHost());
+      return true;
+
+    case 'GET_ANALYSIS_STATUS':
+      handleAsync(() => handleGetAnalysisStatus());
       return true;
 
     default:

@@ -26,18 +26,30 @@ export interface QuotaInfo {
   freeQuotaTotal: number;
 }
 
-/** 用户AI配置 (BYOK) */
-export interface UserAIConfig {
+/** 用户AI配置 (BYOK) — 后端返回的列表数据（不含apiKey） */
+export interface UserAIConfigSummary {
+  /** 配置ID */
+  id?: number;
   /** AI提供商 */
   provider: 'openai' | 'deepseek' | 'claude' | 'glm' | 'custom';
-  /** API Key */
-  apiKey: string;
   /** 自定义Base URL */
   baseUrl?: string;
   /** 模型名称 */
   model: string;
+  /** 是否活跃 */
+  isActive?: boolean;
+  /** 最后测试时间 */
+  lastTestedAt?: string;
+  /** 测试状态 */
+  testStatus?: string;
   /** 是否设为默认 */
   isDefault?: boolean;
+}
+
+/** 用户AI配置 (BYOK) — 编辑/保存时使用（含apiKey） */
+export interface UserAIConfig extends UserAIConfigSummary {
+  /** API Key */
+  apiKey: string;
 }
 
 /** 登录请求 */

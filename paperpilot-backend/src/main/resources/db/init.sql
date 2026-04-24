@@ -160,6 +160,83 @@ CREATE TABLE `ai_logs` (
     KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI调用日志表';
 
+-- AI 分析任务表
+CREATE TABLE `analysis_tasks` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `task_no` VARCHAR(32) NOT NULL COMMENT '任务编号',
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+    `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/processing/completed/partial_failed/failed',
+    `total_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '任务包含论文总数',
+    `processed_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '已处理数量',
+    `success_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '成功数量',
+    `failed_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '失败数量',
+    `new_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '新分析数量',
+    `reused_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '复用历史数量',
+    `reanalyze_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '重新分析数量',
+    `use_user_config` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否使用用户配置',
+    `provider` VARCHAR(50) DEFAULT NULL COMMENT 'AI provider',
+    `model` VARCHAR(100) DEFAULT NULL COMMENT 'AI model',
+    `quota_reserved` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '预留额度',
+    `quota_consumed` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '实际消耗额度',
+    `error_message` TEXT DEFAULT NULL COMMENT '任务错误信息',
+    `started_at` DATETIME DEFAULT NULL COMMENT '开始时间',
+    `completed_at` DATETIME DEFAULT NULL COMMENT '完成时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_analysis_task_no` (`task_no`),
+    KEY `idx_analysis_tasks_user_id` (`user_id`),
+    KEY `idx_analysis_tasks_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI分析任务表';
+
+-- 用户论文 canonical 分析表
+CREATE TABLE `user_paper_analyses` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+    `paper_key` VARCHAR(128) NOT NULL COMMENT '论文业务键',
+    `paper_doi` VARCHAR(255) DEFAULT NULL COMMENT '标准化DOI',
+    `title` VARCHAR(1000) NOT NULL COMMENT '原文标题',
+    `title_cn` VARCHAR(1000) DEFAULT NULL COMMENT '中文标题',
+    `abstract_text` MEDIUMTEXT DEFAULT NULL COMMENT '原文摘要',
+    `abstract_cn` MEDIUMTEXT DEFAULT NULL COMMENT '中文摘要',
+    `authors` TEXT DEFAULT NULL COMMENT '作者字符串',
+    `journal` VARCHAR(500) DEFAULT NULL COMMENT '期刊名',
+    `publish_year` INT DEFAULT NULL COMMENT '发表年份',
+    `citations` INT DEFAULT NULL COMMENT '被引次数',
+    `source_platform` VARCHAR(50) DEFAULT NULL COMMENT '来源平台',
+    `source_url` VARCHAR(1000) DEFAULT NULL COMMENT '来源链接',
+    `pdf_url` VARCHAR(1000) DEFAULT NULL COMMENT 'PDF链接',
+    `summary_zh` MEDIUMTEXT DEFAULT NULL COMMENT '中文总结',
+    `keywords_zh` TEXT DEFAULT NULL COMMENT '中文关键词',
+    `methodology_zh` MEDIUMTEXT DEFAULT NULL COMMENT '研究方法',
+    `conclusion_zh` MEDIUMTEXT DEFAULT NULL COMMENT '研究结论',
+    `research_findings_zh` MEDIUMTEXT DEFAULT NULL COMMENT '研究发现',
+    `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/processing/completed/failed',
+    `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
+    `analyzed_at` DATETIME DEFAULT NULL COMMENT '分析完成时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_paper` (`user_id`, `paper_key`),
+    KEY `idx_user_paper_doi` (`user_id`, `paper_doi`),
+    KEY `idx_user_paper_updated_at` (`user_id`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户论文分析 canonical 表';
+
+-- 分析任务与论文关联表
+CREATE TABLE `analysis_task_papers` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `analysis_task_id` BIGINT UNSIGNED NOT NULL COMMENT '分析任务ID',
+    `user_paper_analysis_id` BIGINT UNSIGNED NOT NULL COMMENT 'canonical 分析ID',
+    `result_source` VARCHAR(20) NOT NULL COMMENT '结果来源: new/reused/reanalyze',
+    `display_order` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '展示顺序',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_analysis_task_papers_task_id` (`analysis_task_id`),
+    KEY `idx_analysis_task_papers_analysis_id` (`user_paper_analysis_id`),
+    UNIQUE KEY `uk_analysis_task_paper` (`analysis_task_id`, `user_paper_analysis_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分析任务与论文关联表';
+
 -- 插入默认管理员账号 (密码: admin123, bcrypt加密)
 INSERT INTO `users` (`email`, `password_hash`, `nickname`, `quota_balance`, `status`)
 VALUES ('admin@paperpilot.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '管理员', 9999, 1);

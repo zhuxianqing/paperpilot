@@ -24,6 +24,18 @@ export interface Paper {
   pdfUrl?: string;
   /** 原文链接 */
   sourceUrl: string;
+  /** 论文业务键 */
+  paperKey?: string;
+  /** 是否已有历史分析 */
+  isAnalyzed?: boolean;
+  /** 历史分析状态 */
+  analysisStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  /** 历史分析时间 */
+  analyzedAt?: string;
+  /** 用户决策 */
+  reuseDecision?: 'reuse' | 'reanalyze';
+  /** 是否强制重跑 */
+  forceReanalyze?: boolean;
   /** AI总结 - 一句话核心贡献 */
   aiSummary?: string;
   /** AI提取关键词 */
@@ -69,7 +81,8 @@ export interface WOSApiRecord {
   /** 标题列表 */
   titles?: {
     item?: {
-      en?: Array<{ title: string }>;
+      en?: Array<{ title?: string }>;
+      [key: string]: Array<{ title?: string }> | undefined;
     };
   };
   /** 作者列表 */
@@ -79,13 +92,30 @@ export interface WOSApiRecord {
         daisng_id?: string;
         last_name?: string;
         first_name?: string;
+        full_name?: string;
+        display_name?: string;
         wos_standard?: string;
       }>;
-    };
+      [key: string]: Array<{
+        daisng_id?: string;
+        last_name?: string;
+        first_name?: string;
+        full_name?: string;
+        display_name?: string;
+        wos_standard?: string;
+      }> | undefined;
+    } | Array<{
+      last_name?: string;
+      first_name?: string;
+      full_name?: string;
+      display_name?: string;
+      wos_standard?: string;
+    }>;
   };
   /** 来源信息 */
   source?: {
-    en?: Array<{ title: string }>;
+    en?: Array<{ title?: string }>;
+    [key: string]: Array<{ title?: string }> | undefined;
   };
   /** 出版信息 */
   pub_info?: {
@@ -96,9 +126,22 @@ export interface WOSApiRecord {
   abstract?: {
     basic?: {
       en?: {
-        abstract?: string;
+        abstract?: string | string[];
       };
+      [key: string]: {
+        abstract?: string | string[];
+      } | undefined;
     };
+    summary?: {
+      en?: {
+        abstract?: string | string[];
+      };
+      [key: string]: {
+        abstract?: string | string[];
+      } | undefined;
+    };
+    paragraphs?: Array<{ text?: string }>;
+    [key: string]: unknown;
   };
   /** 被引次数 */
   citation_related?: {
@@ -112,6 +155,17 @@ export interface WOSApiRecord {
     type: string;
     value: string;
   }>;
+  /** 其他可能的字段 */
+  static_data?: {
+    summary?: {
+      names?: {
+        name?: Array<Record<string, unknown>>;
+      };
+      abstracts?: {
+        abstract?: Array<Record<string, unknown>>;
+      };
+    };
+  };
 }
 
 /** WOS API 响应结构 */

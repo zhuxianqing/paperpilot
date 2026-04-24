@@ -45,9 +45,72 @@ export interface ExportRequest {
   papers: Paper[];
 }
 
+/** Popup 本地分析任务（旧） */
+export interface AnalysisTask {
+  status: 'running' | 'completed' | 'failed';
+  paperDOIs: string[];
+  startTime: number;
+  endTime?: number;
+  errorMessage?: string;
+}
+
+/** 后端分析任务摘要 */
+export interface AnalysisTaskSummary {
+  id: number;
+  taskNo: string;
+  status: 'pending' | 'processing' | 'completed' | 'partial_failed' | 'failed';
+  totalCount: number;
+  processedCount: number;
+  successCount: number;
+  failedCount: number;
+  newCount?: number;
+  reusedCount?: number;
+  reanalyzeCount?: number;
+  useUserConfig?: boolean;
+  provider?: string;
+  model?: string;
+  quotaReserved?: number;
+  quotaConsumed?: number;
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** 后端单篇分析结果 */
+export interface AnalysisPaperResult {
+  id: number;
+  paperKey: string;
+  paperDoi?: string;
+  title: string;
+  titleCn?: string;
+  abstractText?: string;
+  abstractCn?: string;
+  authors?: string;
+  journal?: string;
+  publishYear?: number;
+  citations?: number;
+  sourcePlatform?: string;
+  sourceUrl?: string;
+  pdfUrl?: string;
+  summaryZh?: string;
+  keywordsZh?: string;
+  methodologyZh?: string;
+  conclusionZh?: string;
+  researchFindingsZh?: string;
+  resultSource?: 'new' | 'reused' | 'reanalyze';
+  displayOrder?: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  errorMessage?: string;
+  analyzedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 /** 分页结果 */
 export interface PaginatedResult<T> {
-  list: T[];
+  records: T[];
   total: number;
   page: number;
   size: number;

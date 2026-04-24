@@ -2,13 +2,13 @@ package com.paperpilot.service;
 
 import com.paperpilot.dto.AIConfigDTO;
 import com.paperpilot.dto.PaperDTO;
-import com.paperpilot.dto.response.PaperAnalysisVO;
-
-import java.util.List;
+import com.paperpilot.dto.response.PaperAnalysisTranslateVO;
 
 public interface AIService {
 
-    List<PaperAnalysisVO> analyzeBatch(Long userId, List<PaperDTO> papers, boolean useUserConfig, AIConfigDTO userConfig);
+    PaperAnalysisTranslateVO analyzeSingleWithTranslations(Long userId, PaperDTO paper, boolean useUserConfig, String provider, String model);
+
+    String sha256Hash(String input);
 
     boolean testAIConfig(AIConfigDTO configDTO);
 }

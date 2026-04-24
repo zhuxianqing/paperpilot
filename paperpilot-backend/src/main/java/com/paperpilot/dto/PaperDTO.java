@@ -16,4 +16,8 @@ public class PaperDTO {
     private String quartile;
     private Integer citations;
     private String sourceUrl;
+    private String pdfUrl;
+    private String paperKey;
+    private String reuseDecision;
+    private Boolean forceReanalyze;
 }

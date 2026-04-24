@@ -6,6 +6,7 @@
 import type { ChromeMessageResponse } from '../shared/types/api';
 import type { Paper } from '../shared/types/paper';
 import type { CreateTaskRequest, UserAIConfig } from '../shared/types';
+import type { AnalysisTask } from '../shared/types/task';
 import { api } from './api-client';
 
 /**
@@ -141,19 +142,99 @@ export async function handleClearPapers(): Promise<ChromeMessageResponse> {
 }
 
 /**
- * 处理 AI 分析文献
+ * 兼容旧消息：转发为异步任务提交
  */
 export async function handleAnalyzePapers(payload: {
   papers: Paper[];
   useUserConfig?: boolean;
   config?: UserAIConfig;
 }): Promise<ChromeMessageResponse> {
+  return handleSubmitAnalysisTask(payload);
+}
+
+/**
+ * 获取分析任务状态
+ */
+export async function handleGetAnalysisStatus(): Promise<ChromeMessageResponse> {
   try {
-    const data = await api.analyzePapers(
-      payload.papers,
-      payload.useUserConfig,
-      payload.config
-    );
+    const result = await chrome.storage.local.get('analysisTask');
+    const task = result.analysisTask as AnalysisTask | undefined;
+    return { success: true, data: task || null };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * 提交异步分析任务
+ */
+export async function handleSubmitAnalysisTask(payload: {
+  papers: Paper[];
+  useUserConfig?: boolean;
+  config?: UserAIConfig;
+}): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.submitAnalysisTask(payload.papers, payload.useUserConfig, payload.config);
+    await chrome.storage.local.set({ currentAnalysisTaskNo: data.taskNo });
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+export async function handleLookupAnalysisStatus(payload: {
+  papers: Paper[];
+}): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.lookupAnalysisStatus(payload.papers);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * 获取异步分析任务详情
+ */
+export async function handleGetAnalysisTask(payload: { taskNo: string }): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.getAnalysisTask(payload.taskNo);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * 获取异步分析任务下的论文结果
+ */
+export async function handleGetAnalysisTaskPapers(payload: { taskNo: string }): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.getAnalysisTaskPapers(payload.taskNo);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * 获取异步分析任务历史
+ */
+export async function handleListAnalysisTasks(payload?: { page?: number; size?: number }): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.listAnalysisTasks(payload?.page ?? 1, payload?.size ?? 20);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * 获取单篇分析历史
+ */
+export async function handleListAnalysisHistory(payload?: { page?: number; size?: number; sortBy?: string; order?: string; keyword?: string }): Promise<ChromeMessageResponse> {
+  try {
+    const data = await api.listAnalysisHistory(payload?.page ?? 1, payload?.size ?? 20, payload?.sortBy, payload?.order, payload?.keyword);
     return { success: true, data };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -308,7 +389,12 @@ export async function handleLogout(): Promise<ChromeMessageResponse> {
       'refreshToken',
       'user',
       'cachedPapers',
-      'cachedPapersHost'
+      'cachedPapersHost',
+      'selectedPaperDOIs',
+      'analyzedPapers',
+      'currentView',
+      'analysisTask',
+      'currentAnalysisTaskNo'
     ]);
     return { success: true };
   } catch (error) {

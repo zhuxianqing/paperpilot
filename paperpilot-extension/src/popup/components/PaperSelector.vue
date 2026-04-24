@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useAppStore } from '../stores/app';
 import { truncate, formatAuthors, formatNumber, getQuartileClass } from '@shared/utils/formatter';
+import type { Paper } from '@shared/types/paper';
 
 const store = useAppStore();
 defineEmits<{
@@ -10,20 +11,22 @@ defineEmits<{
 
 const isRefreshing = ref(false);
 
-// 计算属性
 const totalCount = computed(() => store.papers.length);
 const selectedCount = computed(() => store.selectedCount);
 const allSelected = computed(() =>
   store.papers.length > 0 && store.papers.every(p => p.selected)
 );
+const selectedAnalyzedCount = computed(() =>
+  store.papers.filter((paper) => paper.selected && paper.isAnalyzed).length
+);
 
-// 刷新文献列表
 async function refreshPapers() {
   isRefreshing.value = true;
   try {
     const shouldLoad = await shouldLoadPapers();
     if (shouldLoad) {
       await store.loadPapersFromStorage();
+      await store.lookupAnalysisStatus();
     } else {
       store.setPapers([]);
     }
@@ -48,37 +51,49 @@ async function shouldLoadPapers(): Promise<boolean> {
   }
 }
 
-// 全选/取消全选
 function toggleSelectAll() {
   if (allSelected.value) {
-    store.selectNone();
+    void store.selectNone();
   } else {
-    store.selectAll();
+    void store.selectAll();
   }
 }
 
-// 仅选Q1
 function selectQ1Only() {
-  store.selectQ1Only();
+  void store.selectQ1Only();
 }
 
-// 切换选中状态
-function toggleSelection(paper: { doi?: string }) {
-  store.togglePaperSelection(paper.doi);
+function toggleSelection(paper: Paper) {
+  void store.togglePaperSelection(paper.paperKey || paper.doi);
 }
 
-// 打开原文链接
 function openSource(url: string) {
   if (url) {
     chrome.tabs.create({ url });
   }
 }
 
+function setDecision(paper: Paper, decision: 'reuse' | 'reanalyze') {
+  store.setPaperReuseDecision(paper.paperKey || '', decision);
+}
+
+function setBatchDecision(decision: 'reuse' | 'reanalyze') {
+  void store.applyBatchReuseDecision(decision);
+}
+
+function statusLabel(status?: Paper['analysisStatus']) {
+  switch (status) {
+    case 'completed': return '已分析';
+    case 'processing': return '分析中';
+    case 'pending': return '待分析';
+    case 'failed': return '分析失败';
+    default: return '已分析';
+  }
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full p-4">
-    <!-- 工具栏 -->
     <div class="flex items-center justify-between mb-3 flex-shrink-0">
       <div class="flex items-center gap-2">
         <span class="text-sm text-gray-600">
@@ -117,9 +132,21 @@ function openSource(url: string) {
       </div>
     </div>
 
-    <!-- 文献列表 -->
+    <div
+      v-if="selectedAnalyzedCount > 0"
+      class="mb-3 p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between gap-3"
+    >
+      <div>
+        <p class="text-sm text-purple-800">已选论文中有 {{ selectedAnalyzedCount }} 篇存在历史分析结果</p>
+        <p class="text-xs text-purple-600 mt-1">可统一选择复用历史结果，或强制重新分析。</p>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button class="btn-secondary text-xs" @click="setBatchDecision('reuse')">统一复用</button>
+        <button class="btn-primary text-xs" @click="setBatchDecision('reanalyze')">统一重跑</button>
+      </div>
+    </div>
+
     <div class="flex-1 overflow-y-auto scrollbar-thin -mx-4 px-4 min-h-0">
-      <!-- 空状态 -->
       <div
         v-if="totalCount === 0"
         class="flex flex-col items-center justify-center h-64 text-center"
@@ -133,81 +160,93 @@ function openSource(url: string) {
         <p class="text-gray-400 text-xs">请在 WOS 搜索页面进行搜索</p>
       </div>
 
-      <!-- 文献项 -->
       <div v-else class="space-y-2">
         <div
           v-for="paper in store.papers"
-          :key="paper.doi || paper.title"
-          class="group flex gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 transition-colors"
+          :key="paper.paperKey || paper.doi || paper.title"
+          class="group p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 transition-colors"
           :class="{ 'ring-1 ring-primary-500 border-primary-500': paper.selected }"
         >
-          <!-- 复选框 -->
-          <div class="pt-0.5">
-            <input
-              type="checkbox"
-              :checked="paper.selected"
-              @change="toggleSelection(paper)"
-              class="checkbox"
-            />
-          </div>
+          <div class="flex gap-3">
+            <div class="pt-0.5">
+              <input
+                type="checkbox"
+                :checked="paper.selected"
+                @change="toggleSelection(paper)"
+                class="checkbox"
+              />
+            </div>
 
-          <!-- 内容 -->
-          <div class="flex-1 min-w-0">
-            <!-- 标题 -->
-            <h3
-              class="text-sm font-medium text-gray-800 mb-1 cursor-pointer hover:text-primary-600"
-              @click="openSource(paper.sourceUrl)"
-            >
-              {{ truncate(paper.title, 80) }}
-            </h3>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-3">
+                <h3
+                  class="text-sm font-medium text-gray-800 mb-1 cursor-pointer hover:text-primary-600"
+                  @click="openSource(paper.sourceUrl)"
+                >
+                  {{ truncate(paper.title, 80) }}
+                </h3>
+                <span
+                  v-if="paper.isAnalyzed"
+                  class="badge bg-purple-100 text-purple-700 shrink-0"
+                >
+                  AI
+                </span>
+              </div>
 
-            <!-- 作者 -->
-            <p class="text-xs text-gray-500 mb-1.5">
-              {{ formatAuthors(paper.authors, 2) }}
-            </p>
+              <p class="text-xs text-gray-500 mb-1.5">
+                {{ formatAuthors(paper.authors, 2) || 'Unknown' }}
+              </p>
 
-            <!-- 元信息 -->
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-              <!-- 期刊 -->
-              <span v-if="paper.journal" class="text-gray-600 truncate max-w-[150px]">
-                {{ paper.journal }}
-              </span>
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span v-if="paper.journal" class="text-gray-600 truncate max-w-[150px]">
+                  {{ paper.journal }}
+                </span>
+                <span
+                  v-if="paper.quartile"
+                  :class="getQuartileClass(paper.quartile)"
+                >
+                  {{ paper.quartile }}
+                </span>
+                <span v-if="paper.publishYear" class="text-gray-500">
+                  {{ paper.publishYear }}
+                </span>
+                <span v-if="paper.citations !== undefined" class="flex items-center gap-0.5 text-gray-500">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+                  </svg>
+                  {{ formatNumber(paper.citations) }}
+                </span>
+                <span v-if="paper.isAnalyzed" class="text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
+                  {{ statusLabel(paper.analysisStatus) }}
+                </span>
+              </div>
 
-              <!-- 分区 -->
-              <span
-                v-if="paper.quartile"
-                :class="getQuartileClass(paper.quartile)"
+              <div
+                v-if="paper.selected && paper.isAnalyzed"
+                class="mt-3 flex items-center gap-2 text-xs"
               >
-                {{ paper.quartile }}
-              </span>
-
-              <!-- 年份 -->
-              <span v-if="paper.publishYear" class="text-gray-500">
-                {{ paper.publishYear }}
-              </span>
-
-              <!-- 被引 -->
-              <span v-if="paper.citations !== undefined" class="flex items-center gap-0.5 text-gray-500">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
-                </svg>
-                {{ formatNumber(paper.citations) }}
-              </span>
-
-              <!-- AI 分析标识 -->
-              <span
-                v-if="paper.aiSummary"
-                class="badge bg-purple-100 text-purple-700"
-              >
-                AI
-              </span>
+                <span class="text-gray-500">本次选择：</span>
+                <button
+                  class="px-2 py-1 rounded border transition-colors"
+                  :class="paper.reuseDecision === 'reuse' ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500 hover:border-purple-200'"
+                  @click="setDecision(paper, 'reuse')"
+                >
+                  复用已有分析
+                </button>
+                <button
+                  class="px-2 py-1 rounded border transition-colors"
+                  :class="paper.reuseDecision === 'reanalyze' ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-primary-200'"
+                  @click="setDecision(paper, 'reanalyze')"
+                >
+                  重新分析
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 底部操作 -->
     <div class="flex-shrink-0 bg-gray-50 pt-4 pb-2 px-2 border-t border-gray-200">
       <button
         @click="$emit('next')"

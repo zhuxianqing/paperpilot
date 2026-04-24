@@ -41,6 +41,12 @@ export type ChromeMessageType =
   | 'LOAD_PAPERS'
   | 'CLEAR_PAPERS'
   | 'ANALYZE_PAPERS'
+  | 'SUBMIT_ANALYSIS_TASK'
+  | 'GET_ANALYSIS_TASK'
+  | 'LIST_ANALYSIS_TASKS'
+  | 'GET_ANALYSIS_TASK_PAPERS'
+  | 'LIST_ANALYSIS_HISTORY'
+  | 'LOOKUP_ANALYSIS_STATUS'
   | 'EXPORT_FEISHU'
   | 'EXPORT_EXCEL'
   | 'DOWNLOAD_EXCEL'
@@ -50,7 +56,8 @@ export type ChromeMessageType =
   | 'TEST_AI_CONFIG'
   | 'CREATE_TASK'
   | 'GET_TASK'
-  | 'GET_CURRENT_TAB_HOST';
+  | 'GET_CURRENT_TAB_HOST'
+  | 'GET_ANALYSIS_STATUS';
 
 /** Chrome消息 */
 export interface ChromeMessage {

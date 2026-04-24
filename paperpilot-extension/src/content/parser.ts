@@ -6,11 +6,6 @@
 import type { Paper, WOSApiRecord, WOSApiResponse } from '../shared/types/paper';
 import { parseNDJSON } from '../shared/utils/ndjson';
 
-/**
- * 解析 WOS 数据
- * @param data WOS API 返回的 NDJSON 字符串
- * @returns Paper 数组
- */
 export function parseWOSData(data: string): Paper[] {
   if (!data || typeof data !== 'string') {
     console.warn('[PaperPilot Parser] Empty or invalid data');
@@ -18,17 +13,14 @@ export function parseWOSData(data: string): Paper[] {
   }
 
   try {
-    // 解析 NDJSON
     const responses = parseNDJSON<WOSApiResponse>(data);
     const papers: Paper[] = [];
 
     for (const response of responses) {
-      // 只处理 records 类型的响应
       if (response?.key !== 'records' || !response?.payload) {
         continue;
       }
 
-      // 遍历所有记录
       for (const [recordKey, record] of Object.entries(response.payload)) {
         const paper = convertToPaper(record, recordKey);
         if (paper) {
@@ -45,37 +37,17 @@ export function parseWOSData(data: string): Paper[] {
   }
 }
 
-/**
- * 将 WOS 原始记录转换为内部 Paper 格式
- * @param raw WOS 原始记录
- * @returns Paper 对象
- */
 function convertToPaper(raw: WOSApiRecord, recordKey?: string): Paper | null {
   if (!raw) return null;
 
   try {
-    // 提取标题
     const title = extractTitle(raw);
-
-    // 提取作者
     const authors = extractAuthors(raw);
-
-    // 提取来源（期刊）
     const journal = extractJournal(raw);
-
-    // 提取年份
     const publishYear = extractPublishYear(raw);
-
-    // 提取 DOI
     const doi = extractDoi(raw);
-
-    // 提取摘要
     const abstract = extractAbstract(raw);
-
-    // 提取被引次数
     const citations = extractCitations(raw);
-
-    // 构建原文链接
     const sourceUrl = buildSourceUrl(resolveRecordUid(raw, recordKey));
 
     return {
@@ -95,14 +67,13 @@ function convertToPaper(raw: WOSApiRecord, recordKey?: string): Paper | null {
   }
 }
 
-/**
- * 提取标题
- */
 function extractTitle(raw: WOSApiRecord): string {
   try {
-    const titles = raw.titles?.item?.en;
-    if (titles && titles.length > 0) {
-      return titles[0].title?.trim() || 'Unknown Title';
+    const titleGroups = raw.titles?.item;
+    if (!titleGroups) return 'Unknown Title';
+    for (const titles of Object.values(titleGroups)) {
+      const title = titles?.find((item) => item?.title)?.title?.trim();
+      if (title) return title;
     }
     return 'Unknown Title';
   } catch {
@@ -110,44 +81,58 @@ function extractTitle(raw: WOSApiRecord): string {
   }
 }
 
-/**
- * 提取作者列表
- */
 function extractAuthors(raw: WOSApiRecord): string[] {
   try {
-    const authors = raw.names?.author?.en;
-    if (!authors || !Array.isArray(authors)) {
-      return [];
+    const candidates: Array<Record<string, unknown>> = [];
+    const authorField = raw.names?.author;
+    if (Array.isArray(authorField)) {
+      candidates.push(...authorField);
+    } else if (authorField && typeof authorField === 'object') {
+      for (const value of Object.values(authorField)) {
+        if (Array.isArray(value)) {
+          candidates.push(...value);
+        }
+      }
     }
 
-    return authors
-      .map(author => {
-        // 使用 wos_standard 格式（如 "Chen, JK"）或组合 first_name + last_name
-        if (author.wos_standard) {
-          return author.wos_standard;
-        }
-        if (author.last_name || author.first_name) {
-          const last = author.last_name || '';
-          const first = author.first_name || '';
-          const initial = first.charAt(0).toUpperCase();
-          return `${last}${first ? `, ${initial}` : ''}`;
+    const staticNames = raw.static_data?.summary?.names?.name;
+    if (Array.isArray(staticNames)) {
+      candidates.push(...staticNames);
+    }
+
+    const normalized = candidates
+      .map((author) => {
+        const standard = typeof author.wos_standard === 'string' ? author.wos_standard.trim() : '';
+        if (standard) return standard;
+
+        const fullName = typeof author.full_name === 'string' ? author.full_name.trim() : '';
+        if (fullName) return fullName;
+
+        const displayName = typeof author.display_name === 'string' ? author.display_name.trim() : '';
+        if (displayName) return displayName;
+
+        const last = typeof author.last_name === 'string' ? author.last_name.trim() : '';
+        const first = typeof author.first_name === 'string' ? author.first_name.trim() : '';
+        if (last || first) {
+          return [first, last].filter(Boolean).join(' ');
         }
         return '';
       })
-      .filter(name => name.length > 0);
+      .filter(Boolean);
+
+    return [...new Set(normalized)];
   } catch {
     return [];
   }
 }
 
-/**
- * 提取期刊名
- */
 function extractJournal(raw: WOSApiRecord): string | undefined {
   try {
-    const source = raw.source?.en;
-    if (source && source.length > 0) {
-      return source[0].title?.trim();
+    const source = raw.source;
+    if (!source) return undefined;
+    for (const items of Object.values(source)) {
+      const title = items?.find((item) => item?.title)?.title?.trim();
+      if (title) return title;
     }
     return undefined;
   } catch {
@@ -155,17 +140,12 @@ function extractJournal(raw: WOSApiRecord): string | undefined {
   }
 }
 
-/**
- * 提取发表年份
- */
 function extractPublishYear(raw: WOSApiRecord): number | undefined {
   try {
-    // 优先使用 pubyear
     if (raw.pub_info?.pubyear) {
       return raw.pub_info.pubyear;
     }
 
-    // 从 sortdate 提取（如 "2025-12-24"）
     if (raw.pub_info?.sortdate) {
       const year = parseInt(raw.pub_info.sortdate.split('-')[0], 10);
       if (!isNaN(year)) {
@@ -179,18 +159,14 @@ function extractPublishYear(raw: WOSApiRecord): number | undefined {
   }
 }
 
-/**
- * 提取 DOI
- */
 function extractDoi(raw: WOSApiRecord): string | undefined {
   try {
     if (raw.doi) {
       return raw.doi;
     }
 
-    // 从 identifiers 中查找
     if (raw.identifiers && Array.isArray(raw.identifiers)) {
-      const doiId = raw.identifiers.find(id => id.type === 'doi');
+      const doiId = raw.identifiers.find(id => String(id.type).toLowerCase() === 'doi');
       return doiId?.value;
     }
 
@@ -200,20 +176,72 @@ function extractDoi(raw: WOSApiRecord): string | undefined {
   }
 }
 
-/**
- * 提取摘要
- */
 function extractAbstract(raw: WOSApiRecord): string | undefined {
   try {
-    return raw.abstract?.basic?.en?.abstract;
+    const directCandidates: unknown[] = [
+      raw.abstract?.basic?.en?.abstract,
+      raw.abstract?.summary?.en?.abstract,
+      ...(raw.abstract?.basic ? Object.values(raw.abstract.basic).map(item => item?.abstract) : []),
+      ...(raw.abstract?.summary ? Object.values(raw.abstract.summary).map(item => item?.abstract) : [])
+    ];
+
+    for (const candidate of directCandidates) {
+      const normalized = normalizeAbstractCandidate(candidate);
+      if (normalized) return normalized;
+    }
+
+    const paragraphs = raw.abstract?.paragraphs;
+    if (Array.isArray(paragraphs)) {
+      const text = paragraphs.map((item) => item.text?.trim()).filter(Boolean).join(' ');
+      if (text) return text;
+    }
+
+    const staticAbstracts = raw.static_data?.summary?.abstracts?.abstract;
+    if (Array.isArray(staticAbstracts)) {
+      for (const item of staticAbstracts) {
+        const text = extractNestedText(item);
+        if (text) return text;
+      }
+    }
+
+    return undefined;
   } catch {
     return undefined;
   }
 }
 
-/**
- * 提取被引次数
- */
+function normalizeAbstractCandidate(candidate: unknown): string | undefined {
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    return trimmed || undefined;
+  }
+  if (Array.isArray(candidate)) {
+    const joined = candidate.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean).join(' ');
+    return joined || undefined;
+  }
+  return undefined;
+}
+
+function extractNestedText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value.trim() || undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = extractNestedText(item);
+      if (text) return text;
+    }
+    return undefined;
+  }
+  if (value && typeof value === 'object') {
+    for (const nested of Object.values(value)) {
+      const text = extractNestedText(nested);
+      if (text) return text;
+    }
+  }
+  return undefined;
+}
+
 function extractCitations(raw: WOSApiRecord): number {
   try {
     const counts = raw.citation_related?.counts;
@@ -229,9 +257,6 @@ function extractCitations(raw: WOSApiRecord): number {
   }
 }
 
-/**
- * 解析文献 UID
- */
 function resolveRecordUid(raw: WOSApiRecord, recordKey?: string): string {
   if (raw.uid) return raw.uid;
   if (recordKey) return recordKey;
@@ -239,26 +264,17 @@ function resolveRecordUid(raw: WOSApiRecord, recordKey?: string): string {
   return '';
 }
 
-/**
- * 构建原文链接
- */
 function buildSourceUrl(uid: string): string {
   if (!uid) return '';
   return `https://www.webofscience.com/wos/woscc/full-record/${uid}`;
 }
 
-/**
- * 验证 Paper 数据完整性
- */
 export function validatePaper(paper: Paper): boolean {
   if (!paper) return false;
   if (!paper.title || paper.title.trim().length === 0) return false;
   return true;
 }
 
-/**
- * 过滤和清理 Paper 列表
- */
 export function sanitizePapers(papers: Paper[]): Paper[] {
   return papers
     .filter(validatePaper)
@@ -268,10 +284,6 @@ export function sanitizePapers(papers: Paper[]): Paper[] {
     }));
 }
 
-/**
- * 从页面 DOM 中提取文献（已废弃 - 不再使用）
- * @deprecated API 拦截是唯一数据来源，此函数保留但不会自动调用
- */
 export function extractPapersFromDOM(): Paper[] {
   console.warn('[PaperPilot Parser] extractPapersFromDOM is deprecated and should not be called');
   return [];

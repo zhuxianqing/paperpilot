@@ -42,7 +42,13 @@ export const API_ENDPOINTS = {
   },
   // AI分析
   AI: {
-    ANALYZE_BATCH: '/ai/analyze-batch'
+    ANALYZE_BATCH: '/ai/analyze-batch',
+    ANALYSIS_TASKS: '/ai/analysis-tasks',
+    ANALYSIS_TASK: (taskNo: string) => `/ai/analysis-tasks/${taskNo}`,
+    ANALYSIS_TASK_PAPERS: (taskNo: string) => `/ai/analysis-tasks/${taskNo}/papers`,
+    ANALYSIS_TASK_HISTORY: '/ai/analysis-tasks/history',
+    ANALYSIS_HISTORY: '/ai/analyses/history',
+    ANALYSIS_LOOKUP: '/ai/analyses/lookup'
   },
   // 导出
   EXPORT: {

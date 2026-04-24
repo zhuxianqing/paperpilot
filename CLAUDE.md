@@ -40,6 +40,12 @@ mvn test -Dtest=ExportControllerTest           # Run single test class
 
 Backend runs on port 8080. Requires `application-dev.yml` for local config (JWT secret, encryption key, AI API key, mail credentials).
 
+**Local backend environment**
+- Java version: `17`
+- `JAVA_HOME`: `/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home`
+- Maven settings: `/Users/zhuxianqing/maven/setting.xml`
+- When running Maven locally, prefer using the above `JAVA_HOME` and Maven settings explicitly if the shell environment is inconsistent.
+
 ## Architecture
 
 ### Chrome Extension — Message-Passing Architecture

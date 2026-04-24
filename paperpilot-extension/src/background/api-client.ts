@@ -6,8 +6,16 @@
 import { API_BASE_URL, API_ENDPOINTS } from '../shared/constants/api';
 import type { ApiResponse, AuthResponse } from '../shared/types/api';
 import type { Paper } from '../shared/types/paper';
-import type { CreateTaskRequest, SearchTask } from '../shared/types/task';
+import type { CreateTaskRequest, SearchTask, AnalysisTaskSummary, AnalysisPaperResult, PaginatedResult } from '../shared/types/task';
 import type { QuotaInfo, User, UserAIConfig } from '../shared/types/user';
+
+export interface AnalysisLookupResult {
+  paperKey: string;
+  paperDoi?: string;
+  analyzed: boolean;
+  analyzedAt?: string;
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+}
 
 class APIClient {
   private baseURL = API_BASE_URL;
@@ -182,16 +190,83 @@ class APIClient {
   // ===== AI 分析 =====
 
   /**
-   * 批量分析文献
+   * 提交异步分析任务
    */
-  async analyzePapers(
+  async submitAnalysisTask(
     papers: Paper[],
     useUserConfig?: boolean,
     config?: UserAIConfig
-  ): Promise<Paper[]> {
-    return this.request(API_ENDPOINTS.AI.ANALYZE_BATCH, {
+  ): Promise<AnalysisTaskSummary> {
+    return this.request(API_ENDPOINTS.AI.ANALYSIS_TASKS, {
       method: 'POST',
-      body: JSON.stringify({ papers, useUserConfig, config })
+      body: JSON.stringify({
+        papers: papers.map((paper) => ({
+          doi: paper.doi,
+          title: paper.title,
+          authors: paper.authors,
+          abstracts: paper.abstract,
+          journal: paper.journal,
+          publishYear: paper.publishYear,
+          quartile: paper.quartile,
+          citations: paper.citations,
+          sourceUrl: paper.sourceUrl,
+          pdfUrl: paper.pdfUrl,
+          paperKey: paper.paperKey,
+          reuseDecision: paper.reuseDecision,
+          forceReanalyze: paper.forceReanalyze
+        })),
+        useUserConfig,
+        config
+      })
+    });
+  }
+
+  /**
+   * 获取分析任务详情
+   */
+  async getAnalysisTask(taskNo: string): Promise<AnalysisTaskSummary> {
+    return this.request(API_ENDPOINTS.AI.ANALYSIS_TASK(taskNo));
+  }
+
+  /**
+   * 获取分析任务下的论文结果
+   */
+  async getAnalysisTaskPapers(taskNo: string): Promise<AnalysisPaperResult[]> {
+    return this.request(API_ENDPOINTS.AI.ANALYSIS_TASK_PAPERS(taskNo));
+  }
+
+  /**
+   * 获取分析任务历史
+   */
+  async listAnalysisTasks(page = 1, size = 20): Promise<PaginatedResult<AnalysisTaskSummary>> {
+    return this.request(`${API_ENDPOINTS.AI.ANALYSIS_TASK_HISTORY}?page=${page}&size=${size}`);
+  }
+
+  /**
+   * 获取单篇分析历史
+   */
+  async listAnalysisHistory(page = 1, size = 20, sortBy?: string, order?: string, keyword?: string): Promise<PaginatedResult<AnalysisPaperResult>> {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (sortBy) params.set('sortBy', sortBy);
+    if (order) params.set('order', order);
+    if (keyword) params.set('keyword', keyword);
+    return this.request(`${API_ENDPOINTS.AI.ANALYSIS_HISTORY}?${params.toString()}`);
+  }
+
+  async lookupAnalysisStatus(papers: Paper[]): Promise<AnalysisLookupResult[]> {
+    return this.request(API_ENDPOINTS.AI.ANALYSIS_LOOKUP, {
+      method: 'POST',
+      body: JSON.stringify(papers.map((paper) => ({
+        doi: paper.doi,
+        title: paper.title,
+        authors: paper.authors,
+        abstracts: paper.abstract,
+        journal: paper.journal,
+        publishYear: paper.publishYear,
+        sourceUrl: paper.sourceUrl,
+        pdfUrl: paper.pdfUrl,
+        paperKey: paper.paperKey
+      })))
     });
   }
 
